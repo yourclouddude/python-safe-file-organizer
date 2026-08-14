@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from file_organizer.executor import apply_plan, rollback
 from file_organizer.planner import MoveOperation, build_plan
