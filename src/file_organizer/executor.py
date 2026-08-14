@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 from file_organizer.planner import MoveOperation
 
@@ -20,7 +20,7 @@ def write_manifest(
 
     payload = {
         "version": MANIFEST_VERSION,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "operations": [operation.as_dict() for operation in operations],
     }
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
