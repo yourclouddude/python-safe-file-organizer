@@ -1,42 +1,18 @@
 # Python Safe File Organizer
 
-A practical **YourCloudDude** project for learning how to build a safer Python automation tool—not just a script that moves files.
+Most file-organizer scripts are easy to write.
 
-The organizer scans one folder, classifies files by extension, previews the plan, avoids filename collisions, records every move in a manifest, and can roll the operation back.
+That is also what makes them easy to get wrong.
 
-## Why this project exists
+A script that immediately moves everything it finds works right up until a filename already exists, the wrong folder is selected, or the fifth move fails after the first four already happened.
 
-A beginner file organizer often jumps straight from:
+This project is about that gap. The file sorting is simple. The useful part is learning how to make automation **previewable, collision-safe, traceable, and reversible**.
 
-```text
-read files -> move files
-```
+## The rule this project starts with
 
-That works until a filename already exists, the wrong directory is selected, or you need to undo the operation.
+**Do not change the file system while you are still deciding what to do.**
 
-This project adds the engineering controls that make automation safer:
-
-- preview before mutation
-- explicit confirmation before moving files
-- collision-safe destination names
-- rollback using an operation manifest
-- hidden-file protection
-- tests around failure-prone behavior
-- linting and CI
-
-## What you will learn
-
-- `pathlib` for cross-platform file-system work
-- `dataclasses` for modeling planned operations
-- separation of planning and execution
-- defensive file moves with `shutil`
-- collision handling without overwriting existing files
-- JSON manifests for traceability and rollback
-- CLI design with `argparse`
-- testing file-system automation with `pytest`
-- automated quality checks with GitHub Actions
-
-## Architecture
+The organizer separates planning from execution:
 
 ```mermaid
 flowchart LR
@@ -51,9 +27,189 @@ flowchart LR
     I --> J["Rollback"]
 ```
 
-The most important design decision is that **planning is separate from execution**. You can inspect what the program intends to do before it changes the file system.
+That means you can inspect the intended changes before a file moves.
 
-## Project structure
+The normal workflow is:
+
+```text
+plan → inspect → apply --yes → keep the manifest → undo if needed
+```
+
+For a first run, use a temporary folder containing copied files. Do not test file automation for the first time on something important.
+
+## Install it
+
+Requires Python 3.11+.
+
+```bash
+git clone https://github.com/yourclouddude/python-safe-file-organizer.git
+cd python-safe-file-organizer
+python -m venv .venv
+```
+
+Activate the virtual environment, then install the project and development tools:
+
+```bash
+pip install -r requirements-dev.txt
+pip install -e .
+```
+
+## Start with a plan
+
+```bash
+file-organizer plan ~/Downloads
+```
+
+`plan` does not move anything. It scans the target directory, applies the classification rules, resolves destination names, and prints what would happen.
+
+A preview can look like this:
+
+```text
+expenses.csv -> Data/expenses.csv
+photo.png -> Images/photo.png
+resume.pdf -> Documents/resume.pdf
+backup.zip -> Archives/backup.zip
+```
+
+If the plan is wrong, stop there. That is the point of having a planning phase.
+
+## Apply only after you have seen the plan
+
+```bash
+file-organizer apply ~/Downloads --yes
+```
+
+The explicit `--yes` is deliberate. The command should not quietly turn a read-only-looking experiment into a batch of file-system mutations.
+
+After a successful operation, the organizer writes:
+
+```text
+~/Downloads/.file-organizer-manifest.json
+```
+
+The manifest records where each completed file came from and where it went. It is both an audit trail and the input for rollback.
+
+## What happens when a filename already exists?
+
+Suppose this file is already present:
+
+```text
+Documents/report.pdf
+```
+
+Moving another `report.pdf` into that directory must not silently destroy the first one. The organizer picks a new name instead:
+
+```text
+Documents/report (1).pdf
+```
+
+If that is taken too, it tries `(2)`, `(3)`, and so on.
+
+For this project, preserving both files is more important than producing the prettiest destination name.
+
+## Rollback has rules too
+
+To undo an operation:
+
+```bash
+file-organizer undo ~/Downloads/.file-organizer-manifest.json --yes
+```
+
+Rollback is not allowed to overwrite a new file that now exists at an original path. It stops instead.
+
+That matters because "undo" should not become a second destructive operation.
+
+There is another failure case worth noticing. If `apply_plan()` completes some moves and a later move fails during the same run, it attempts to restore the moves already completed before re-raising the error.
+
+This is not a transactional file system, and the project does not claim that it is. It demonstrates a more practical rule:
+
+> If an operation can partially succeed, decide what partial failure should mean before it happens.
+
+## Why hidden files are left alone
+
+Files beginning with `.` are skipped by default.
+
+A generic organizer cannot safely assume that hidden files are disposable user content. They may be application configuration, repository metadata, or operating-system files. Moving them would increase the blast radius for very little learning value.
+
+The project is also non-recursive by default for the same reason. Reorganizing one directory is easier to inspect and recover than unexpectedly restructuring an entire tree.
+
+## The built-in categories
+
+| Category | Example extensions |
+|---|---|
+| Documents | `.pdf`, `.docx`, `.txt`, `.md` |
+| Images | `.jpg`, `.png`, `.webp`, `.svg` |
+| Data | `.csv`, `.json`, `.xlsx`, `.parquet` |
+| Archives | `.zip`, `.tar`, `.gz`, `.7z` |
+| Code | `.py`, `.js`, `.ts`, `.java`, `.sql` |
+| Audio | `.mp3`, `.wav`, `.flac` |
+| Video | `.mp4`, `.mov`, `.mkv`, `.webm` |
+| Other | anything unmatched |
+
+The rules live in `src/file_organizer/config.py`. Changing them is a useful exercise because the planner and executor do not need to be rewritten just because classification changes.
+
+## Run the checks
+
+```bash
+python -m ruff check src tests
+python -m compileall -q src tests
+python -m pytest
+```
+
+GitHub Actions runs the same quality checks on pushes and pull requests.
+
+The tests focus on the places where file automation usually becomes unsafe rather than just checking that a happy-path move works. They cover classification, hidden files, collision-safe naming, preview behavior, manifest creation, rollback, refusal to overwrite during rollback, missing directories, and CLI confirmation.
+
+## A few decisions worth reading in the code
+
+### Planner and executor are separate
+
+The planner answers "what should happen?" The executor answers "make this already-reviewed plan happen." Keeping those jobs separate makes preview mode real rather than cosmetic and keeps the core behavior easier to test.
+
+### The manifest is part of the design, not debug output
+
+Without a durable record of completed moves, rollback would have to guess. The manifest makes the operation traceable and gives undo a concrete source of truth.
+
+### Collision handling is intentionally conservative
+
+The tool never chooses silent replacement. A convenience script should not get permission to destroy data merely because two files share a name.
+
+### The first version keeps the blast radius small
+
+No recursive traversal by default, hidden files skipped, and mutation requires explicit confirmation. Those restrictions can feel inconvenient, but they make the behavior easier to understand before adding more power.
+
+## What this tool does not promise
+
+It is not a replacement for backups, snapshots, or a transactional file system.
+
+Races are still possible if another process changes files between planning and execution. A machine crash can interrupt work outside the Python process. A manifest cannot restore content that some unrelated program deletes.
+
+Those limits are useful to understand because "has an undo command" is not the same as "cannot lose data."
+
+## Experiments that actually change the design
+
+Once the base workflow makes sense, try changes that force you to think about safety again:
+
+1. add `--recursive`, then define how deep it may go and what should be excluded
+2. load categories from TOML or YAML without coupling configuration to execution
+3. add hash-based duplicate detection and decide whether duplicates should move, skip, or quarantine
+4. add interactive confirmation for individual high-risk moves
+5. add structured logging and make failed/rolled-back operations easier to inspect
+6. add scheduling only after deciding what unattended confirmation should mean
+
+A GUI can be added later, but the planner/executor boundary should survive underneath it.
+
+## Questions worth being able to answer
+
+- Why is planning separate from execution?
+- What prevents an existing destination file from being overwritten?
+- What happens if several moves succeed and a later one fails?
+- Why is rollback not equivalent to a database transaction?
+- What new risks appear if recursive mode is added?
+- How would you test file operations without touching real user files?
+- What can still change between preview and execution?
+
+## Repository map
 
 ```text
 .
@@ -75,207 +231,10 @@ The most important design decision is that **planning is separate from execution
 └── requirements-dev.txt
 ```
 
-## Safety model
+For implementation details, see [`docs/design.md`](docs/design.md). For common problems, see [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
-This tool deliberately refuses to make file changes unless you explicitly use `--yes`.
+## YourCloudDude
 
-The recommended workflow is:
-
-```text
-plan -> inspect -> apply --yes -> keep manifest -> undo if needed
-```
-
-For your first test, use a temporary folder with copied files rather than an important Downloads or Documents directory.
-
-## Install
-
-Requires Python 3.11+.
-
-```bash
-git clone https://github.com/yourclouddude/python-safe-file-organizer.git
-cd python-safe-file-organizer
-
-python -m venv .venv
-```
-
-Activate the virtual environment, then install:
-
-```bash
-pip install -r requirements-dev.txt
-pip install -e .
-```
-
-## Preview a plan
-
-Nothing is changed:
-
-```bash
-file-organizer plan ~/Downloads
-```
-
-Example:
-
-```text
-expenses.csv -> Data/expenses.csv
-photo.png -> Images/photo.png
-resume.pdf -> Documents/resume.pdf
-backup.zip -> Archives/backup.zip
-```
-
-## Apply the plan
-
-First preview it. Then:
-
-```bash
-file-organizer apply ~/Downloads --yes
-```
-
-The organizer writes a manifest at:
-
-```text
-~/Downloads/.file-organizer-manifest.json
-```
-
-That manifest records the original and destination path for every completed move.
-
-## Undo
-
-```bash
-file-organizer undo ~/Downloads/.file-organizer-manifest.json --yes
-```
-
-Rollback will not overwrite a new file that already exists at the original path. It stops with an error instead.
-
-## Default categories
-
-| Category | Example extensions |
-|---|---|
-| Documents | `.pdf`, `.docx`, `.txt`, `.md` |
-| Images | `.jpg`, `.png`, `.webp`, `.svg` |
-| Data | `.csv`, `.json`, `.xlsx`, `.parquet` |
-| Archives | `.zip`, `.tar`, `.gz`, `.7z` |
-| Code | `.py`, `.js`, `.ts`, `.java`, `.sql` |
-| Audio | `.mp3`, `.wav`, `.flac` |
-| Video | `.mp4`, `.mov`, `.mkv`, `.webm` |
-| Other | anything unmatched |
-
-Edit `src/file_organizer/config.py` to experiment with the rules.
-
-## Collision handling
-
-If this exists:
-
-```text
-Documents/report.pdf
-```
-
-and another `report.pdf` needs to move there, the organizer chooses:
-
-```text
-Documents/report (1).pdf
-```
-
-instead of overwriting the existing file.
-
-If that also exists, it continues with `(2)`, `(3)`, and so on.
-
-## Why hidden files are skipped
-
-Files beginning with `.` are ignored by default.
-
-Hidden files often include tool configuration or operating-system metadata. A generic organizer should not move those casually.
-
-## Failure behavior
-
-`apply_plan()` tracks completed moves. If a later move fails during the same run, it attempts to restore moves already completed in that operation before re-raising the error.
-
-This is not a full transactional file system, but it demonstrates an important automation principle:
-
-> when an operation can partially fail, design for partial failure explicitly.
-
-## Run quality checks
-
-```bash
-python -m ruff check src tests
-python -m compileall -q src tests
-python -m pytest
-```
-
-GitHub Actions runs the same checks on pushes and pull requests.
-
-## Tests included
-
-The test suite covers:
-
-- correct classification
-- ignoring hidden files and directories
-- collision-safe renaming
-- applying a plan
-- writing a manifest
-- successful rollback
-- refusing destructive rollback overwrites
-- missing-directory handling
-- CLI confirmation safety
-- preview mode making no changes
-
-## Engineering decisions
-
-### Why not move files while scanning?
-
-Because planning first makes the behavior observable and testable. It also gives a user the chance to inspect the proposed changes.
-
-### Why a manifest instead of relying on memory?
-
-Automation should leave evidence of what it changed. A manifest makes rollback deterministic and provides a useful audit trail.
-
-### Why not overwrite collisions?
-
-Silent overwrites are unacceptable for a learning automation tool. Preserving both files is safer.
-
-### Why non-recursive by default?
-
-Recursive file organization can unexpectedly restructure an entire directory tree. This first version intentionally limits the blast radius.
-
-## Production-quality extensions
-
-Try these after you understand the base project:
-
-1. Load custom categories from TOML or YAML.
-2. Add `--recursive` with explicit guardrails.
-3. Add file-size or date-based organization rules.
-4. Add structured logging.
-5. Add hash-based duplicate detection.
-6. Add a quarantine mode for suspicious extensions.
-7. Add interactive confirmation instead of only `--yes`.
-8. Add a Tkinter or web interface on top of the same planner/executor core.
-9. Add a scheduled automation mode.
-10. Package and publish the CLI after choosing an appropriate open-source license.
-
-## Interview questions to practice
-
-1. Why separate planning from execution?
-2. How do you prevent accidental overwrites?
-3. What happens if the third file move fails after two succeeded?
-4. Why is rollback not equivalent to a database transaction?
-5. How would you make the tool safe for recursive organization?
-6. Why use `pathlib` instead of manual path strings?
-7. How would you test file operations without touching real user files?
-8. What race conditions could still exist?
-9. How would you support very large directories efficiently?
-10. How would you add configuration without tightly coupling it to execution?
-
-## Troubleshooting
-
-See [`docs/troubleshooting.md`](docs/troubleshooting.md).
-
-For the deeper design discussion, see [`docs/design.md`](docs/design.md).
-
-## About YourCloudDude
-
-**YourCloudDude** creates practical AWS, cloud, and Python learning resources focused on learning by building.
+YourCloudDude builds practical AWS, cloud, and Python projects for people who learn best by building, breaking, inspecting, and improving real systems.
 
 Website: https://yourclouddude.com/
-
----
-
-Build the project, test it on disposable files, then extend it. The goal is not only to automate a folder—it is to learn how to design automation that is **observable, reversible, and safer by default**.
