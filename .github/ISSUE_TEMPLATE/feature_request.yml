@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose an improvement to the safe file organizer
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or learning goal
+      description: What workflow limitation or safety problem should this feature address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Trade-offs
+      description: What changes in destructive-operation risk, rollback, portability, complexity, or user expectations?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Planning / preview
+        - File classification
+        - Collision handling
+        - Apply / execution
+        - Manifest / rollback
+        - CLI / usability
+        - Testing / portability
+        - Documentation / learning experience
+    validations:
+      required: true
