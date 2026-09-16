@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible problem in the safe file organizer
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Reproduce file-operation bugs with temporary/sample files, not important personal data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the command, sample directory layout, and sequence that triggers the issue.
+      placeholder: |
+        1. Create a temporary folder with ...
+        2. Run file-organizer ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, operating system, and installation method.
+      placeholder: "Python 3.12, Windows 11, editable install"
+  - type: textarea
+    id: layout
+    attributes:
+      label: Sample file layout or relevant output
+      description: Use fake/sample names and remove personal paths or sensitive content.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I reproduced this with temporary/sample files rather than important personal data.
+          required: true
+        - label: I removed personal paths, secrets, and sensitive content from this report.
+          required: true
+        - label: I checked the existing issues before opening this one.
+          required: true
